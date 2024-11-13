@@ -2,17 +2,19 @@ type Product {
   id: ID!
   name: String!
   description: String
+  category: String
+  quantity: Int
   price: Float!
   imageUrl: String
 }
 
 type Query {
-  products(limit: Int, offset: Int): [Product]
+  products(search: String, filter: String, limit: Int, offset: Int): [Product]
   product(id: ID!): Product
 }
 
 type Mutation {
-  createProduct(name: String!, description: String, price: Float!, imageUrl: String): Product
-  updateProduct(id: ID!, name: String, description: String, price: Float, imageUrl: String): Product
+  createProduct(name: String!, description: String, category: String, quantity: Int, price: Float!, imageUrl: String): Product
+  updateProduct(id: ID!, name: String, description: String category: String, quantity: Int,, price: Float, imageUrl: String): Product
   deleteProduct(id: ID!): Boolean
 }

@@ -5,6 +5,8 @@ const { makeExecutableSchema } = require('@graphql-tools/schema');
 const resolvers = require('./graphql/resolvers');
 const path = require('path');
 const http = require('http');
+const cors = require('cors');
+const express = require('express');
 const { createLogger, transports, format } = require('winston');
 
 // Load environment variables
@@ -46,7 +48,11 @@ const yoga = createYoga({
   ],
 });
 
-const server = http.createServer(yoga);
+const app = express();
+app.use(cors({ origin: 'http://localhost:3001' })); // Allow requests from http://localhost:3001
+app.use('/graphql', yoga);
+
+const server = http.createServer(app);
 
 server.listen(PORT, () => {
   logger.info(`GraphQL server is running on http://localhost:${PORT}`);

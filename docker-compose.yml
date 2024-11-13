@@ -1,11 +1,26 @@
-version: '3.8'
+version: "3.9"  
+
 services:
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3000"
+    networks:
+      - app-network
+    volumes:
+      - ./client:/app:cached 
+      - /app/node_modules     
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    command: npm run dev
+
   app:
     build:
       context: ./app
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
       - "4000:4000"
     environment:
       - DB_HOST=db
@@ -23,8 +38,8 @@ services:
     networks:
       - app-network
     volumes:
-      - ./app:/app
-      - /app/node_modules
+      - ./app:/app:cached  
+      - /app/node_modules    
     command: ["npm", "start"]
 
   db:
@@ -34,9 +49,9 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: ecommerce_db
     ports:
-      - "5433:5432"  
+      - "5433:5432"
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - ./database/data:/var/lib/postgresql/data
     networks:
       - app-network
     healthcheck:
@@ -51,9 +66,6 @@ services:
       - "6379:6379"
     networks:
       - app-network
-
-volumes:
-  db_data:
 
 networks:
   app-network:
