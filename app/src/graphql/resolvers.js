@@ -3,17 +3,40 @@ const redisClient = require('../config/redis');
 
 const resolvers = {
   Query: {
-    async products(_, { limit = 10, offset = 0 }) {
+    async products(_, { limit = 10, offset = 0, search, minPrice, maxPrice }) {
       try {
-        const cacheKey = `products_${limit}_${offset}`;
+        const cacheKey = `products_${limit}_${offset}_${search}_${minPrice}_${maxPrice}`;
         const cachedProducts = await redisClient.get(cacheKey);
 
         if (cachedProducts) {
           return JSON.parse(cachedProducts);
         }
 
-        const result = await pool.query('SELECT * FROM products LIMIT $1 OFFSET $2', [limit, offset]);
-        await redisClient.setex(cacheKey, 3600, JSON.stringify(result.rows)); // Cache for 1 hour
+        let query = 'SELECT * FROM products WHERE 1=1';
+        const values = [];
+
+        if (search) {
+          query += ' AND (name ILIKE $1 OR description ILIKE $1)';
+          values.push(`%${search}%`);
+        }
+
+        if (minPrice !== undefined) {
+          query += ` AND price >= $${values.length + 1}`;
+          values.push(minPrice);
+        }
+
+        if (maxPrice !== undefined) {
+          query += ` AND price <= $${values.length + 1}`;
+          values.push(maxPrice);
+        }
+
+        query += ` LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
+        values.push(limit, offset);
+
+        const result = await pool.query(query, values);
+        await redisClient.set(cacheKey, JSON.stringify(result.rows), {
+          EX: 3600, // Cache for 1 hour
+        });
 
         return result.rows;
       } catch (err) {
@@ -36,7 +59,9 @@ const resolvers = {
           throw new Error('Product not found');
         }
 
-        await redisClient.setex(cacheKey, 3600, JSON.stringify(result.rows[0])); 
+        await redisClient.set(cacheKey, JSON.stringify(result.rows[0]), {
+          EX: 3600, // Cache for 1 hour
+        });
 
         return result.rows[0];
       } catch (err) {
@@ -49,34 +74,10 @@ const resolvers = {
   Mutation: {
     async createProduct(_, { name, description, price, imageUrl }) {
       try {
-      
         if (!name || !price) {
           throw new Error('Name and price are required');
         }
 
-      
-        const tableCheck = await pool.query(`
-          SELECT EXISTS (
-            SELECT 1 
-            FROM information_schema.tables 
-            WHERE table_name = 'products'
-          );
-        `);
-
-        if (!tableCheck.rows[0].exists) {
-     
-          await pool.query(`
-            CREATE TABLE products (
-              id SERIAL PRIMARY KEY,
-              name VARCHAR(255) NOT NULL,
-              description TEXT,
-              price DECIMAL(10, 2) NOT NULL,
-              imageUrl VARCHAR(255)
-            );
-          `);
-        }
-
-       
         const result = await pool.query(
           'INSERT INTO products (name, description, price, imageUrl) VALUES ($1, $2, $3, $4) RETURNING *',
           [name, description, price, imageUrl]
@@ -84,12 +85,10 @@ const resolvers = {
 
         const newProduct = result.rows[0];
 
-    
         try {
           await redisClient.del('products_*');
         } catch (cacheErr) {
           console.error('Cache invalidation failed:', cacheErr);
-         
         }
 
         return newProduct;
@@ -101,11 +100,7 @@ const resolvers = {
 
     async updateProduct(_, { id, name, description, price, imageUrl }) {
       try {
-    
-        const existingProduct = await pool.query(
-          'SELECT * FROM products WHERE id = $1',
-          [id]
-        );
+        const existingProduct = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
 
         if (existingProduct.rows.length === 0) {
           throw new Error(`Product with id ${id} not found`);
@@ -147,7 +142,6 @@ const resolvers = {
 
         const result = await pool.query(updateQuery, values);
 
-       
         try {
           await redisClient.del(`product_${id}`);
           await redisClient.del('products_*');
@@ -164,29 +158,19 @@ const resolvers = {
 
     async deleteProduct(_, { id }) {
       try {
-        
-        const existingProduct = await pool.query(
-          'SELECT * FROM products WHERE id = $1',
-          [id]
-        );
+        const existingProduct = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
 
         if (existingProduct.rows.length === 0) {
           throw new Error(`Product with id ${id} not found`);
         }
 
-        
-        const result = await pool.query(
-          'DELETE FROM products WHERE id = $1 RETURNING *',
-          [id]
-        );
+        const result = await pool.query('DELETE FROM products WHERE id = $1 RETURNING *', [id]);
 
-        
         try {
           await redisClient.del(`product_${id}`);
           await redisClient.del('products_*');
         } catch (cacheErr) {
           console.error('Cache invalidation failed:', cacheErr);
-          
         }
 
         return true;
@@ -194,8 +178,8 @@ const resolvers = {
         console.error('Error deleting product:', err);
         throw new Error(`Failed to delete product: ${err.message}`);
       }
-    }
-  }
+    },
+  },
 };
 
 module.exports = resolvers;

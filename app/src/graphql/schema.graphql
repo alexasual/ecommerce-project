@@ -7,7 +7,7 @@ type Product {
 }
 
 type Query {
-  products(limit: Int, offset: Int): [Product]
+  products(limit: Int, offset: Int, search: String, minPrice: Float, maxPrice: Float): [Product]
   product(id: ID!): Product
 }
 
